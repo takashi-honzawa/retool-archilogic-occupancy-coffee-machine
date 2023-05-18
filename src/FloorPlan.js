@@ -44,11 +44,6 @@ let prevClickedMeetingRoomId
 
 let meetingRooms
 
-const minMaxObject = {
-  collaborative: {min: {value: 10, desk: undefined}, max: {value: 0, desk: undefined}}, 
-  quiet: {min: {value: 10, desk: undefined}, max: {value: 0, desk: undefined}}
-}
-
 const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
   const container = useRef(null);
 
@@ -135,47 +130,6 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
   }
   function createGradientColors(spaceResources){
     spaceColorObjects = []
-
-    // prevOccupancyData = model.occupancyData
-    // prevMinMaxValues = model.minMaxValues
-
-    // const inMin = model.minMaxValues.min
-    // const inMax = model.minMaxValues.min
-    
-    // spaceResources.forEach(space => {
-    //   if(space.usage === 'meetingRoom'){
-    //     const match = model.occupancyData.find(meetingRoomData => space.id === meetingRoomData.spaceId)
-    //     console.log('!!!!!', match)
-    //     const remappedFloat = map(match.meetingLengthSum, inMin, inMax, outMin, outMax)
-    //     const remappedInt = Math.trunc(remappedFloat)
-    //     const color = gradientColors[remappedInt]
-    //     const rgb = hexToRgb(color) 
-    //     const spaceColorObject = {
-    //       space: space,
-    //       displayData: { 
-    //         value: match.meetingLengthSum,
-    //         gradientIndex: remappedInt,
-    //         color
-    //       }
-    //     }
-    //     spaceColorObject.space.node.setHighlight({
-    //       fill: rgb,
-    //       fillOpacity: 0.4
-    //     })
-    //     spaceColorObjects.push(spaceColorObject)
-    //   } else {
-    //     const color = defaultColors['other']
-    //     const spaceColorObject = {
-    //       space,
-    //       displayData: { value: null, gradientIndex: null, color: color }
-    //     }
-    //     spaceColorObject.space.node.setHighlight({
-    //       fill: color,
-    //       fillOpacity: 0.4
-    //     })
-    //     spaceColorObjects.push(spaceColorObject)
-    //   }
-    // })
     
     meetingRooms = spaceResources.filter((space) => {
       return space.usage === 'meetingRoom';
@@ -219,13 +173,10 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
 
   function onClick(fpe){
     fpe.on('click', (event) => {
-      console.log('!!!!!')
       const position = event.pos
       const positionResources = fpe.getResourcesFromPosition(position)
 
       if(!positionResources.spaces.length){
-        //removeCursorMarker()
-        //removeNearestMarkers()
         return
       }
       
@@ -234,8 +185,6 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
       console.log(selectedSpace)
 
       if(selectedSpace.usage !== 'meetingRoom') {
-        //removeCursorMarker()
-        //removeNearestMarkers()
         return
       }
 
@@ -243,10 +192,8 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
       prevClickedMeetingRoomId = selectedSpace.id
 
       const match = spaceColorObjects.find(spaceColorObject => spaceColorObject.space.id === selectedSpace.id)
-
-      console.log('!!', match)
       
-      //modelUpdate({selectedRoom: match})
+      modelUpdate({selectedRoomId: match.space.id})
     })
   }
 
@@ -264,7 +211,7 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
       .then(() => {
         selectMeetingRooms(fpe.resources)
         createSpaceColorObjects(fpe.resources.spaces)
-        onClick(fpe)//!!!!
+        onClick(fpe)
       })
     }
   })
