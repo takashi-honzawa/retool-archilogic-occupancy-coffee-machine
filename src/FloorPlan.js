@@ -3,46 +3,45 @@ import { FloorPlanEngine } from '@archilogic/floor-plan-sdk'
 import './FloorPlan.css'
 
 import {
-  apiBaseURL,
   startupSettings,
-  defaultColors,
   hexToRgb,
-  generateGradients2Colors,
-  generateGradients3Colors,
-  map, 
   arrayEquals,
-  objectEquals,
-  createLine
 } from './utils'
-
-let prevOccupancyData
-let prevMinMaxValues
-let prevDateRange 
 
 let spaceColorObjects = []
 
-let midPoints = 10
-let minColor = '#df9a9a'
-let maxColor = '#21ff00'
-let midColor = '#f1ff84'
-const gradientColors = generateGradients3Colors(minColor, midColor, maxColor)
+const productId = 'cd84b712-f29d-40a1-8d41-e756a2d5fc6e' //coffee machine
 
-let outMin = 0
-let outMax = midPoints - 1
+const colors = {
+  green: '#21ff00',
+  yellow: '#f1ff84',
+  red: '#df9a9a'
+}
 
 let token
 let floorId
 let hasLoaded = false
 let fpe
-let layer
-let colorScheme
-let cursorMarker
-let nearestMarkers = []
-let bestWorstMarkers = []
 
+let prevMeetingData 
+let prevCoffeeMachineData
 let prevClickedMeetingRoomId
 
 let meetingRooms
+
+function isTimeInRange(timeRange, time) {
+  const [start, end] = timeRange.split(' - ');
+  
+  const startTime = new Date(`1970-01-01T${start}`);
+  const endTime = new Date(`1970-01-01T${end}`);
+  const inputTime = new Date(`1970-01-01T${time}`);
+  
+  if (inputTime >= startTime && inputTime <= endTime) {
+    return true;
+  } else {
+    return false;
+  }
+}
 
 const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
   const container = useRef(null);
@@ -51,36 +50,84 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
   token = model.token
   floorId = model.floorId
 
-  function addMarker(fpe, position, isCursorMarker, markerType = 'defalut-marker') {
-    const el = document.createElement('div');
-    el.className =  isCursorMarker ? "cursor-marker" : "icon-marker"
-    el.classList.add(markerType)
+  function addCoffeeMarker(fpe, pos, value, id){
+    const el = document.createElement('div')
+    el.classList.add('coffee-machine')
+
+    let iconClass
+    if (value > 75){
+      iconClass = 'green-100'
+    } else if (value <=75 && value > 50) {
+      iconClass = 'green-75'
+    } else if (value <=50 && value > 25) {
+      iconClass = 'yellow-50'
+    } else {
+      iconClass = 'red-25'
+    }
+
+    const container = document.createElement('div')
+    const icon = document.createElement('div')
+    const textCont = document.createElement('div')
+    const text = document.createElement('span')
+
+    container.classList.add('coffee-level-vis-cont')
+    container.setAttribute('id', id)
+    icon.classList.add('coffee-level-icon', iconClass)
+    textCont.classList.add('coffee-level-text-cont')
+    text.classList.add('text')
+
+    text.textContent = value
+
+    textCont.appendChild(text)
+    container.appendChild(icon)
+    container.appendChild(textCont)
+    el.appendChild(container)
 
     const marker = fpe.addHtmlMarker({
-      el,
-      pos: position,
-      offset: [0, 0],
-      radius: false,
-    });
-    return marker;
+      pos: pos,
+      el
+    })
+    return marker
   }
-  function removeCursorMarker(){
-    if (cursorMarker){
-      cursorMarker.remove();
-      cursorMarker = undefined
-    }
+
+  function updateCoffeeLevels(coffeeData){
+    coffeeData.forEach(data => {
+      const id = data.machineId
+      const value = data.value
+      
+      let iconClass
+      if (value > 75){
+        iconClass = 'green-100'
+      } else if (value <=75 && value > 50) {
+        iconClass = 'green-75'
+      } else if (value <=50 && value > 25) {
+        iconClass = 'yellow-50'
+      } else {
+        iconClass = 'red-25'
+      }
+
+      const barCont = document.getElementById(id)
+      const icon = barCont.querySelectorAll('div')[0]
+      const textCont = barCont.querySelectorAll('div')[1]
+      const text = textCont.querySelectorAll('span')[0]
+
+      icon.removeAttribute('class')
+      icon.classList.add('coffee-level-icon', iconClass)
+
+      text.textContent = value
+    })
   }
-  function removeNearestMarkers(){
-    if (nearestMarkers.length !== 0){
-      nearestMarkers.forEach(marker => marker.remove())
-      nearestMarkers = [];
-    }
-  }
-  function removeBestWorstMarkers(){
-    if(bestWorstMarkers.length !== 0){
-      bestWorstMarkers.forEach(marker => marker.remove())
-      bestWorstMarkers = []
-    }
+
+  function visualizeCoffeeMachine(assets){
+    const coffeeMachines = assets.filter(asset => asset.productId === productId)
+    coffeeMachines.forEach(machine => {
+      const match = model.coffeeMachineData.find(data => data.machineId === machine.id)
+      const coffeeLevel = match.value
+
+      const position = [machine.position.x, machine.position.z]
+      addCoffeeMarker(fpe, position, coffeeLevel,  machine.id)
+    })
+    prevCoffeeMachineData = model.coffeeMachineData
   }
 
   function selectMeetingRooms(resources){
@@ -89,78 +136,35 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
     });
   }
   function createSpaceColorObjects(spaceResources) {
-    removeCursorMarker()
-    removeNearestMarkers()
-    
-    if(model.colorScheme === "gradient"){
-      createGradientColors(spaceResources)
-      colorScheme = 'gradient'
-    } else {
-      createDefaultColors(spaceResources)
-      colorScheme = 'default'
-    }
-  }
-  function createDefaultColors(spaceResources){
     spaceColorObjects = []
-    spaceResources.forEach(space => {
-      if ( space.program ) {
-        const color = defaultColors[space.program]
-        const spaceColorObject = {
-          space,
-          displayData: { value: null, gradientIndex: null, color: color }
-        }
-        spaceColorObject.space.node.setHighlight({
-          fill: color,
-          fillOpacity: 0.4
-        })
-        spaceColorObjects.push(spaceColorObject)
-      } else {
-        const color = defaultColors['other']
-        const spaceColorObject = {
-          space,
-          displayData: { value: null, gradientIndex: null, color: color }
-        }
-        spaceColorObject.space.node.setHighlight({
-          fill: color,
-          fillOpacity: 0.4
-        })
-        spaceColorObjects.push(spaceColorObject)
-      }
-    })
-  }
-  function createGradientColors(spaceResources){
-    spaceColorObjects = []
-    
+
     meetingRooms = spaceResources.filter((space) => {
       return space.usage === 'meetingRoom';
     });
 
-    if(model.occupancyData && model.minMaxValues){
-      prevOccupancyData = model.occupancyData
-      prevMinMaxValues = model.minMaxValues
-      prevDateRange = model.dateRange
+    if(model.meetingData && model.selectedTime){
+      prevMeetingData = model.meetingData
 
-      console.log('prevDateRange', prevDateRange)
-
-      let inMin = model.minMaxValues.min
-      let inMax = model.minMaxValues.min
-
-      model.occupancyData.forEach(meetingRoomData => {
-        const match = meetingRooms.find(meetingRoom => meetingRoom.id === meetingRoomData.spaceId)    
-        const remappedFloat = map(meetingRoomData.meetingLengthSum, inMin, inMax, outMin, outMax)
-        const remappedInt = Math.trunc(remappedFloat) ? Math.trunc(remappedFloat) : 0
+      model.meetingData.forEach(meetingRoomData => {
+        const match = meetingRooms.find(meetingRoom => meetingRoom.id === meetingRoomData.spaceId)
+        const isOccupied = meetingRoomData.meetings.some(meeting => isTimeInRange(meeting.timeSlot, model.selectedTime))
         
-        const color = gradientColors[remappedInt]
+        let color
+        if(isOccupied){
+          color = '#d5493a'//'#df9a9a'
+        } else {
+          color = '#279c45'//'#21ff00'
+        }
+
         const rgb = hexToRgb(color) 
+
         const spaceColorObject = {
           space: match,
           displayData: { 
-            value: meetingRoomData.meetingLengthSum,
-            gradientIndex: remappedInt,
             color
           }
         }
-        
+
         spaceColorObject.space.node.setHighlight({
           fill: rgb,
           fillOpacity: 0.4
@@ -168,7 +172,7 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
         
         spaceColorObjects.push(spaceColorObject)
       })
-    }
+    }  
   }
 
   function onClick(fpe){
@@ -181,8 +185,6 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
       }
       
       const selectedSpace = positionResources.spaces[0];
-
-      console.log(selectedSpace)
 
       if(selectedSpace.usage !== 'meetingRoom') {
         return
@@ -211,6 +213,7 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
       .then(() => {
         selectMeetingRooms(fpe.resources)
         createSpaceColorObjects(fpe.resources.spaces)
+        visualizeCoffeeMachine(fpe.resources.assets)
         onClick(fpe)
       })
     }
@@ -218,12 +221,16 @@ const FloorPlan = ({ triggerQuery, model, modelUpdate }) => {
 
   useEffect(() => {
     if(!fpe || !hasLoaded) return
-    //onClick(fpe)
-    if(arrayEquals(prevOccupancyData, model.occupancyData) || arrayEquals(prevMinMaxValues, model.minMaxValues)) return
     if(hasLoaded !== model.floorId) return
-    if(prevDateRange !== model.dateRange){
-      createSpaceColorObjects(fpe.resources.spaces)
-    }
+    createSpaceColorObjects(fpe.resources.spaces)
+  })
+
+  useEffect(() => {
+    if(!fpe || !hasLoaded) return
+    if(hasLoaded !== model.floorId) return
+    if(arrayEquals(prevCoffeeMachineData, model.coffeeMachineData)) return
+    console.log('coffee data updating')
+    updateCoffeeLevels(model.coffeeMachineData)
   })
   
   return(
